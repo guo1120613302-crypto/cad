@@ -1,0 +1,12 @@
+{
+  "users": [
+    {
+      "email": "ceo@hongrui.com",
+      "password": "admin"
+    },
+    {
+      "email": "guest@hongrui.com",
+      "password": "123"
+    }
+  ]
+}
