@@ -1,11 +1,11 @@
-import { SelectTool } from './tools/SelectTool.js'
+import * as THREE from 'three' // 【新增】：仅保留这一个新增的 THREE 引入
+import { SelectTool } from './tools/SelectTool.js' // 确保这个只出现一次！
 import { RectTool } from './tools/RectTool.js'
 import { BendTool } from './tools/BendTool.js'
 import { MirrorTool } from './tools/MirrorTool.js' 
 import { EntityManager } from './EntityManager.js'
 import { WeldTool } from './tools/WeldTool.js'
 import { HistoryManager } from './HistoryManager.js'
-
 export class ToolHub {
   constructor(stage, uiState, onSelect, onEdgeSelected, onMirrorUpdate, onWeldUpdate = () => {}) {
     this.stage = stage;
@@ -51,7 +51,98 @@ export class ToolHub {
       this.tools[this.activeToolId][action](event);
     }
   }
+  selectByUuid(uuid) {
+    if (!this.tools.select) return;
+    
+    // 找到场景中对应的 Mesh
+    const target = this.stage.scene.getObjectByProperty('uuid', uuid);
+    if (target) {
+      this.tools.select.deselectAll();
+      this.tools.select.selectMesh(target, false);
+    }
+  }
 
+  toggleObjectVisible(uuid) {
+    const obj = this.stage.scene.getObjectByProperty('uuid', uuid);
+    if (obj) obj.visible = !obj.visible;
+  }
+
+  toggleObjectLock(uuid) {
+    const obj = this.stage.scene.getObjectByProperty('uuid', uuid);
+    if (obj) obj.userData.locked = !obj.userData.locked;
+  }
+
+  // 获取场景中所有符合条件的零件列表，供 Vue 渲染
+  getFeatureList() {
+    const list = [];
+    // 仅遍历场景的第一层直接子元素
+    this.stage.scene.children.forEach(obj => {
+      // 1. 如果这是一个钣金组件（自动打组的 Group）
+      if (obj.userData && obj.userData.isSheetMetalGroup) {
+        const children = [];
+        obj.children.forEach(child => {
+          if (child.isMesh && (child.userData.type || child.userData.isPart)) {
+            children.push({
+              uuid: child.uuid,
+              name: child.name,
+              visible: child.visible,
+              userData: { ...child.userData }
+            });
+          }
+        });
+        list.push({
+          uuid: obj.uuid,
+          name: obj.name,
+          isGroup: true,       // 标记为组件组
+          visible: obj.visible,
+          children: children,  // 挂载子特征
+          userData: { ...obj.userData }
+        });
+      } 
+      // 2. 如果这是一个独立的单体特征（还没有进行折弯等打组操作）
+      else if (obj.isMesh && obj.userData && (obj.userData.type || obj.userData.isPart)) {
+        list.push({
+          uuid: obj.uuid,
+          name: obj.name,
+          isGroup: false,
+          visible: obj.visible,
+          userData: { ...obj.userData }
+        });
+      }
+    });
+    return list;
+  }
+  renameFeature(uuid, newName) {
+    const obj = this.stage.scene.getObjectByProperty('uuid', uuid);
+    if (obj) obj.name = newName;
+  }
+
+  deleteFeature(uuid) {
+    const obj = this.stage.scene.getObjectByProperty('uuid', uuid);
+    if (obj) {
+      // 【优化】：删除前强制清空所有高亮蓝框，防止删除组时产生幽灵轮廓
+      if (this.tools.select.deselectAll) this.tools.select.deselectAll();
+      this.entityManager.deleteEntity(obj);
+    }
+  }
+  groupFeatures(uuids) {
+    const group = new THREE.Group();
+    group.userData.isSheetMetalGroup = true;
+    group.name = `钣金组件_${THREE.MathUtils.generateUUID().substring(0, 4).toUpperCase()}`;
+    
+    // 组必须先装载进场景中
+    this.stage.scene.add(group);
+    
+    uuids.forEach(uuid => {
+      const obj = this.stage.scene.getObjectByProperty('uuid', uuid);
+      if (obj) {
+        // attach API 最强大之处在于：保持世界物理坐标不变的同时转移父级
+        group.attach(obj);
+      }
+    });
+    
+    if (this.tools.select.deselectAll) this.tools.select.deselectAll();
+  }
   updateEntity(dataPackage) {
     if (!dataPackage) return;
 

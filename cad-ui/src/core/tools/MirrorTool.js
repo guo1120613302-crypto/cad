@@ -326,6 +326,8 @@ export class MirrorTool {
   }
 
   // 安全提取配置，绝不再发生 NaN
+  // src/core/tools/MirrorTool.js
+
   executeMirror(config) {
     if (this.targets.length === 0 || !this.referencePlane) return;
 
@@ -342,7 +344,11 @@ export class MirrorTool {
     }
 
     const N = basePlane.normal;
-    const commands = []; // 准备包裹
+
+    // 【核心修改 1】：建立一个全新的 钣金组件 (Group)
+    const newGroup = new THREE.Group();
+    newGroup.userData.isSheetMetalGroup = true;
+
     this.targets.forEach(target => {
       let T = 0;
       if (target.geometry.type === 'BoxGeometry') {
@@ -393,14 +399,9 @@ export class MirrorTool {
       pos.needsUpdate = true;
       mirroredGeo.computeVertexNormals();
 
-      // 【修复】：强制重算包围球，让镜像出来的物体绝不失效！
+      // 强制重算包围盒/球
       mirroredGeo.computeBoundingBox();
       mirroredGeo.computeBoundingSphere(); 
-
-      if (target.parent && target.parent.userData.isSheetMetalGroup) {
-        const invMat = new THREE.Matrix4().copy(target.parent.matrixWorld).invert();
-        mirroredGeo.applyMatrix4(invMat);
-      }
 
       const mirroredMesh = new THREE.Mesh(mirroredGeo, target.material.clone());
       mirroredMesh.position.set(0, 0, 0);
@@ -408,14 +409,14 @@ export class MirrorTool {
       mirroredMesh.scale.set(1, 1, 1);
       mirroredMesh.userData = { ...target.userData }; 
 
-      // 【改为装载入包裹】
+      // 【核心修改 2】：把生成的网格直接放进刚才新建的组里
       const parent = (target.parent && target.parent.userData.isSheetMetalGroup) ? target.parent : this.scene;
       commands.push(new AddObjectCommand(mirroredMesh, parent, '特征镜像'));
     });
 
-    // 【一次性打包执行命令】
-    if (this.history && commands.length > 0) {
-      this.history.execute(new CompoundCommand('特征镜像', commands));
+    // 【核心修改 3】：整个新组作为一个命令，推入历史并挂载到场景上
+    if (this.history && newGroup.children.length > 0) {
+      this.history.execute(new AddObjectCommand(newGroup, this.scene, '特征镜像生成新组'));
     }
 
     this.clearAll();

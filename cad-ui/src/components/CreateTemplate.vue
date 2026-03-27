@@ -1,7 +1,9 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted,onUnmounted } from 'vue'
+import FeatureTree from './FeatureTree.vue'
 import Workspace3D from '../components/Workspace3D.vue'
 import FloatPanel from '../components/FloatPanel.vue'
+
 
 const emit = defineEmits(['back', 'add-log'])
 
@@ -42,6 +44,23 @@ const uiState = ref({
   weldParams: { height: 50, width: 0, thickness: 1.5, overlap: 'outer', angle: 90 }
 })
 
+const featureList = ref([])      // 存储左侧树列表
+const selectedIds = ref([])
+
+const syncTree = () => {
+  if (window.toolHub) {
+    featureList.value = window.toolHub.getFeatureList();
+    selectedIds.value = (window.toolHub.tools.select.selectedObjects || []).map(o => o.uuid);
+  }
+}
+
+let syncTimer = null;
+onMounted(() => { syncTimer = setInterval(syncTree, 200); })
+onUnmounted(() => { if (syncTimer) clearInterval(syncTimer); })
+
+const handleTreeSelect = (uuid) => window.toolHub?.selectByUuid(uuid);
+const handleTreeVisible = (uuid) => { window.toolHub?.toggleObjectVisible(uuid); syncTree(); };
+const handleTreeLock = (uuid) => { window.toolHub?.toggleObjectLock(uuid); syncTree(); };
 const bendParams = ref({
   length: 100,
   width: 0, 
@@ -206,7 +225,8 @@ const exitWorkspace = () => {
         保 存 模 板
       </button>
     </header>
-
+  
+    
     <div class="absolute inset-0 z-0 pt-14 pb-40">
       <Workspace3D 
         :thickness="globalThickness" 
@@ -221,7 +241,17 @@ const exitWorkspace = () => {
         @system-log="handleSystemLog" 
       />
     </div>
-
+    div class="flex-1 flex overflow-hidden relative">
+    <FloatPanel title="特征管理器 (TREE)" :initialX="20" :initialY="80" :initialWidth="260">
+      <FeatureTree 
+        :objects="featureList" 
+        :selectedIds="selectedIds"
+        @select="handleTreeSelect"
+        @toggle-visible="handleTreeVisible"
+        @toggle-lock="handleTreeLock"
+        class="h-full min-h-[300px]" 
+      />
+    </FloatPanel>
     <FloatPanel title="工具箱" :initialX="20" :initialY="80" :initialWidth="80">
       <div class="flex flex-col gap-5 items-center py-2">
         <button v-for="tool in tools" :key="tool.id" 

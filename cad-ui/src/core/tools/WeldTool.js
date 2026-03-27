@@ -206,17 +206,15 @@ export class WeldTool {
     if (!this.previewMesh) return;
     const finalMesh = this.previewMesh.clone();
     finalMesh.material = new THREE.MeshStandardMaterial({ color: '#8892b0', metalness: 0.6, roughness: 0.4 });
+    
+    // 【核心修复】：补回这行丢失的类型标识，后续功能都会依赖它！
     finalMesh.userData.isPart = true;
+    finalMesh.userData.type = 'weld_plate'; 
     
-    const group = new THREE.Group();
-    group.userData.isSheetMetalGroup = true;
-    group.add(finalMesh);
-    
-    // 【改为执行命令】
     if (this.history) {
-      this.history.execute(new AddObjectCommand(group, this.scene, '生成焊板'));
+      this.history.execute(new AddObjectCommand(finalMesh, this.scene, '生成焊板'));
     } else {
-      this.scene.add(group);
+      this.scene.add(finalMesh);
     }
 
     this.clearAll();

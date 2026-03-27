@@ -120,7 +120,7 @@ onEnterPressed() {
       metalness: 0.6 
     })
     const sheetMetal = new THREE.Mesh(geometry, material)
-    sheetMetal.userData.isPart = true // 【新增】标记这是一个真实的钣金零件
+    sheetMetal.userData = { isPart: true, type: 'base_rect' };
     // 3. 极其重要的物理对齐：起点坐标 + (输入的长度 * 方向符号) / 2
     const centerX = this.startPoint.x + (inputW * signX) / 2
     const centerY = this.startPoint.y + (inputH * signY) / 2

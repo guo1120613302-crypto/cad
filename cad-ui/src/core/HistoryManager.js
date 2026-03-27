@@ -99,14 +99,10 @@ export class AddBendCommand {
   }
   
   execute() {
+    // 【修改】：去除自动建组逻辑。
+    // 如果母板已经在用户"手动创建"的组里，就跟着放进去；否则直接作为独立图层放在最外层。
     if (this.parentMesh && this.originalParent && this.originalParent.userData.isSheetMetalGroup) {
        this.originalParent.add(this.newBend);
-    } else if (this.parentMesh) {
-       this.createdGroup = new THREE.Group();
-       this.createdGroup.userData.isSheetMetalGroup = true;
-       this.scene.add(this.createdGroup);
-       this.createdGroup.add(this.parentMesh);
-       this.createdGroup.add(this.newBend);
     } else {
        this.scene.add(this.newBend);
     }
@@ -120,16 +116,14 @@ export class AddBendCommand {
   }
   
   undo() {
-    if (this.createdGroup) {
-       this.originalParent.add(this.parentMesh); // 把母板还给原来的空间
-       this.scene.remove(this.createdGroup);
-    } else if (this.originalParent && this.originalParent.userData.isSheetMetalGroup) {
+    // 【修改】：同步更新撤销逻辑
+    if (this.parentMesh && this.originalParent && this.originalParent.userData.isSheetMetalGroup) {
        this.originalParent.remove(this.newBend);
     } else {
        this.scene.remove(this.newBend);
     }
     
-    // 恢复 45 度切角前的数据！完美复原！
+    // 恢复 45 度切角前的数据
     if (this.parentMesh && this.oldPosArray) {
        this.parentMesh.geometry.attributes.position.array.set(this.oldPosArray);
        this.parentMesh.geometry.attributes.position.needsUpdate = true;

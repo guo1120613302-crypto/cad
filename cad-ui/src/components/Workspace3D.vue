@@ -76,7 +76,7 @@ onMounted(() => {
       (data) => emit('weld-updated', data) 
     )
   
-  toolHub.switchTool(props.activeTool)
+  window.toolHub = toolHub // 【修复】：挂载到全局，让特征树能读取到数据
 
   const canvas = stage.renderer.domElement
   window.addEventListener('resize', () => stage.onResize())
@@ -91,6 +91,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeyDown)
   stage?.dispose()
+  window.toolHub = null // 【修复】：退出工作台时清理全局变量
 })
 </script>
 
