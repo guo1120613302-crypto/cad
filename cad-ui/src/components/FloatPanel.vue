@@ -21,7 +21,7 @@ const contentHeight = ref('auto') // 内容区高度
 let dragOffset = { x: 0, y: 0 }
 let resizeType = '' // 记录当前缩放的方向：'e', 'w', 's', 'se', 'sw'
 
-// --- 1. 强化版吸附系统 (保持之前逻辑) ---
+// --- 1. 强化版吸附系统 ---
 const onDrag = (e) => {
   if (!isDragging.value || !panelRef.value) return
   let newX = e.clientX - dragOffset.x
@@ -33,11 +33,7 @@ const onDrag = (e) => {
   const selfW = panelRef.value.offsetWidth
   const selfH = panelRef.value.offsetHeight
 
-  if (newX < snapThreshold) newX = 0
-  if (newX > screenW - selfW - snapThreshold) newX = screenW - selfW
-  if (newY < 40 + snapThreshold) newY = 40 
-  if (newY > screenH - 128 - selfH - snapThreshold) newY = screenH - 128 - selfH 
-
+  // 1. 面板间的磁吸逻辑
   const allPanels = document.querySelectorAll('.float-panel')
   allPanels.forEach(other => {
     if (other === panelRef.value || other.style.display === 'none') return
@@ -48,14 +44,28 @@ const onDrag = (e) => {
     if (Math.abs(newY + selfH - rect.top) < snapThreshold) newY = rect.top - selfH
   })
 
+  // 2. 屏幕边缘限制 (右侧 / 底部)
+  let maxX = screenW - selfW;
+  let maxY = screenH - 128 - selfH;
+  if (newX > maxX - snapThreshold) newX = maxX;
+  if (newY > maxY - snapThreshold) newY = maxY;
+
+  // 3. 【核心修复】：屏幕边缘绝对防御 (左侧 / 顶部) - 放在最后，拥有最高优先级！
+  // 哪怕面板高度有一万像素，它也只能向下溢出，绝不准把标题栏顶出屏幕外！
+  if (newX < 0) newX = 0;
+  if (newY < 5) newY = 5; 
+
   position.value = { x: newX, y: newY }
 }
 
-// --- 2. 核心：全边缘缩放系统 ---
+// --- 2. 核心：全边缘缩放系统 (已修复死区 Bug) ---
 const startResize = (e, type) => {
   e.stopPropagation()
   isResizing.value = true
   resizeType = type
+  
+  // 强制全局光标变成拖拽箭头，防止拖快了鼠标样式闪烁
+  document.body.style.cursor = `${type}-resize`
   
   const startX = e.clientX
   const startY = e.clientY
@@ -68,18 +78,23 @@ const startResize = (e, type) => {
     const dx = ev.clientX - startX
     const dy = ev.clientY - startY
 
-    // 根据拖动的边缘执行不同的数学逻辑
-    if (resizeType.includes('e')) { // 右边缘
-      panelWidth.value = Math.max(150, startW + dx)
+    // 右边缘：直接增加宽度，最小宽度限制改为 60
+    if (resizeType.includes('e')) { 
+      panelWidth.value = Math.max(60, startW + dx)
     }
-    if (resizeType.includes('w')) { // 左边缘 (需要同时改变 X 坐标)
-      const targetW = Math.max(150, startW - dx)
-      if (targetW > 150) {
-        panelWidth.value = targetW
-        position.value.x = startXPos + dx
-      }
+    
+    // 左边缘：保证右侧边界绝对不动，向左衍生，最小宽度限制改为 60
+    if (resizeType.includes('w')) { 
+      let newW = startW - dx
+      if (newW < 60) newW = 60 
+      
+      panelWidth.value = newW
+      // 核心修复：X坐标 = 原始右边界(startXPos + startW) - 新的宽度
+      position.value.x = startXPos + startW - newW 
     }
-    if (resizeType.includes('s')) { // 下边缘
+    
+    // 下边缘：改变高度
+    if (resizeType.includes('s')) { 
       contentHeight.value = Math.max(40, startH + dy) + 'px'
     }
   }
@@ -88,6 +103,7 @@ const startResize = (e, type) => {
     isResizing.value = false
     window.removeEventListener('mousemove', onResize)
     window.removeEventListener('mouseup', stopResize)
+    // 恢复全局光标
     document.body.style.cursor = 'default'
   }
 
@@ -140,7 +156,7 @@ onUnmounted(() => {
       </div>
     </div>
     
-    <div v-show="!isMinimized" class="custom-content p-2 text-white overflow-y-auto custom-scrollbar relative" :style="{ height: contentHeight }">
+    <div v-show="!isMinimized" class="custom-content p-2 text-white overflow-y-auto overflow-x-hidden custom-scrollbar relative" :style="{ height: contentHeight }">
       <slot></slot>
     </div>
 
@@ -166,5 +182,6 @@ onUnmounted(() => {
 /* 禁用内容区的某些交互，防止缩放时误触 */
 .custom-content {
   user-select: none;
+  max-height: calc(100vh - 180px);
 }
 </style>

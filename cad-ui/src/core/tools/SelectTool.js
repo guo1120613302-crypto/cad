@@ -1,12 +1,13 @@
 import * as THREE from 'three'
 import { TransformCommand } from '../HistoryManager.js'
 export class SelectTool {
-  constructor(scene, camera, canvas, entityManager, onSelect) {
+  constructor(scene, camera, canvas, entityManager, onSelect, toolHub) {
     this.scene = scene
     this.camera = camera
     this.canvas = canvas
     this.entityManager = entityManager
     this.onSelect = onSelect
+    this.toolHub = toolHub; // 新增
     
     this.isActive = false
     this.raycaster = new THREE.Raycaster()
@@ -92,12 +93,21 @@ export class SelectTool {
       })
       this.gizmoStartPos.copy(this.gizmo.position)
       this.dragPlane.setFromNormalAndCoplanarPoint(this.camera.getWorldDirection(new THREE.Vector3()), this.gizmo.position)
+      
+      // 【核心修复 1】：记录鼠标点下的瞬间，在拖拽平面上的“绝对初始坐标”
+      this.dragStartPoint = new THREE.Vector3()
+      this.raycaster.ray.intersectPlane(this.dragPlane, this.dragStartPoint)
+      
       return
     }
 
     const intersects = this.raycaster.intersectObjects(this.scene.children, true)
-    const target = intersects.find(h => h.object.type === 'Mesh' && h.object.userData.isPart && !h.object.userData.isPreview)
-    
+    const target = intersects.find(h => 
+      h.object.type === 'Mesh' && 
+      h.object.userData.isPart && 
+      !h.object.userData.isPreview &&
+      h.object.visible && (!h.object.parent || h.object.parent.visible !== false)
+    )
     // 按住 Shift 或 Ctrl 进入多选追加模式
     const isMultiMode = event.shiftKey || event.ctrlKey || event.metaKey
 
@@ -135,7 +145,10 @@ export class SelectTool {
 
       const intersectPoint = new THREE.Vector3()
       this.raycaster.ray.intersectPlane(this.dragPlane, intersectPoint)
-      const offset = intersectPoint.sub(this.gizmoStartPos)
+      
+      // 【核心修复 2】：使用“当前鼠标点”减去“初始鼠标点”，这样物体只在原地跟随增量移动
+      const offset = intersectPoint.clone().sub(this.dragStartPoint)
+      
       const axisDir = new THREE.Vector3(this.activeAxis==='x'?1:0, this.activeAxis==='y'?1:0, this.activeAxis==='z'?1:0)
       const delta = axisDir.clone().multiplyScalar(offset.dot(axisDir))
 
@@ -149,6 +162,11 @@ export class SelectTool {
       })
       this.syncGizmo()
       this.notify()
+      
+      // (如果你之前加上了实时干涉检查，保留下面这段，否则可以忽略)
+      if (this.toolHub && this.toolHub.autoCheckInterference) {
+        this.toolHub.checkInterference();
+      }
       return
     }
 
@@ -208,7 +226,10 @@ export class SelectTool {
         const parts = []
         this.scene.traverse(child => {
           if (child.type === 'Mesh' && child.userData.isPart && !child.userData.isPreview) {
-            parts.push(child)
+            // 【新增】：过滤掉被隐藏的图层
+            if (child.visible && (!child.parent || child.parent.visible !== false)) {
+              parts.push(child)
+            }
           }
         })
 
@@ -351,12 +372,15 @@ export class SelectTool {
       return
     }
     const p = primary.position, g = primary.geometry.parameters
+    // 使用 Number(val.toFixed(3)) 可以最高保留3位小数，同时自动抹除 100.000 末尾多余的 0
+    const format = (val) => val !== undefined ? Number(val.toFixed(3)) : 0
+    
     this.onSelect({ 
       id: primary.uuid, 
-      width: g.width?.toFixed(1) || '0', 
-      height: g.height?.toFixed(1) || '0', 
-      thickness: g.depth?.toFixed(1) || '0', 
-      x: p.x.toFixed(1), y: p.y.toFixed(1), z: p.z.toFixed(1) 
+      width: format(g.width), 
+      height: format(g.height), 
+      thickness: format(g.depth), 
+      x: format(p.x), y: format(p.y), z: format(p.z) 
     })
   }
 

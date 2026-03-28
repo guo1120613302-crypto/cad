@@ -9,17 +9,34 @@ const emit = defineEmits(['confirm', 'cancel'])
 const wInput = ref(null)
 const hInput = ref(null)
 
-// 【新增】：安全数学计算解析器
-const evalMath = (val) => {
+// 缓存用户点击输入框瞬间的基础值，用于相对运算
+const baseValues = { width: 0, height: 0 }
+
+const handleFocus = (field, event) => {
+  // 1. 点击时全选文本
+  event.target.select();
+  // 2. 记录当前真实的值作为基础值
+  const current = parseFloat(props.uiState[field]);
+  if (!isNaN(current)) baseValues[field] = current;
+}
+
+// 【优化】：安全数学计算解析器（支持直接打 +50 进行相对运算，精度保留 3 位）
+const evalMath = (val, base) => {
   try {
-    // 只保留数字、小数点和基础数学符号，防止恶意代码注入
-    let expr = String(val).replace(/[^0-9+\-*/.()]/g, '');
-    if (!expr) return 0;
-    // 安全执行数学运算
+    let expr = String(val).trim();
+    // 如果首字符是运算符号，则将基础值拼在前面
+    if (/^[+\-*/]/.test(expr)) {
+      expr = String(base) + expr;
+    }
+    // 过滤非法字符
+    expr = expr.replace(/[^0-9+\-*/.()]/g, '');
+    if (!expr) return base;
+    
     const res = new Function('return ' + expr)();
-    return isNaN(res) ? 0 : Number(res.toFixed(2));
+    // 保留3位小数，并用 Number 抹除末尾多余的 0
+    return isNaN(res) ? base : Number(res.toFixed(3));
   } catch (e) {
-    return 0;
+    return base;
   }
 }
 
@@ -29,6 +46,7 @@ watch(() => props.uiState.visible, (newVal) => {
       if (wInput.value) {
         wInput.value.focus()
         wInput.value.select()
+        baseValues.width = parseFloat(props.uiState.width) || 0
       }
     }, 10) 
   }
@@ -36,22 +54,27 @@ watch(() => props.uiState.visible, (newVal) => {
 
 const handleTab = (current) => {
   if (current === 'width') {
-    // 离开前执行加减乘除计算
-    props.uiState.width = evalMath(props.uiState.width)
+    props.uiState.width = evalMath(props.uiState.width, baseValues.width)
     props.uiState.isWidthLocked = true
-    setTimeout(() => { hInput.value?.focus(); hInput.value?.select() }, 10)
+    setTimeout(() => { 
+      hInput.value?.focus(); 
+      hInput.value?.select();
+      baseValues.height = parseFloat(props.uiState.height) || 0
+    }, 10)
   } else {
-    // 离开前执行加减乘除计算
-    props.uiState.height = evalMath(props.uiState.height)
+    props.uiState.height = evalMath(props.uiState.height, baseValues.height)
     props.uiState.isHeightLocked = true
-    setTimeout(() => { wInput.value?.focus(); wInput.value?.select() }, 10)
+    setTimeout(() => { 
+      wInput.value?.focus(); 
+      wInput.value?.select();
+      baseValues.width = parseFloat(props.uiState.width) || 0
+    }, 10)
   }
 }
 
 const handleEnter = () => {
-  // 回车确认前，执行最终的数学运算
-  props.uiState.width = evalMath(props.uiState.width)
-  props.uiState.height = evalMath(props.uiState.height)
+  props.uiState.width = evalMath(props.uiState.width, baseValues.width)
+  props.uiState.height = evalMath(props.uiState.height, baseValues.height)
   emit('confirm')
 }
 const handleEsc = () => emit('cancel')
@@ -66,6 +89,7 @@ const handleEsc = () => emit('cancel')
       <input ref="wInput" 
              v-model="uiState.width" 
              type="text"
+             @focus="handleFocus('width', $event)"
              @keydown.tab.prevent="handleTab('width')" 
              @keydown.enter.prevent="handleEnter"
              @keydown.esc.prevent="handleEsc"
@@ -77,6 +101,7 @@ const handleEsc = () => emit('cancel')
       <input ref="hInput" 
              v-model="uiState.height" 
              type="text"
+             @focus="handleFocus('height', $event)"
              @keydown.tab.prevent="handleTab('height')" 
              @keydown.enter.prevent="handleEnter"
              @keydown.esc.prevent="handleEsc"

@@ -75,7 +75,8 @@ export class MirrorTool {
     this.raycaster.setFromCamera(this.mouse, this.camera);
     
     const hit = this.raycaster.intersectObjects(this.scene.children, true)
-      .find(h => h.object.userData.isPart && !h.object.userData.isPreview);
+      .find(h => h.object.userData.isPart && !h.object.userData.isPreview && 
+                 h.object.visible && (!h.object.parent || h.object.parent.visible !== false));
 
     if (hit) {
       if (this.step === 'targets') {
@@ -100,7 +101,8 @@ export class MirrorTool {
     this.raycaster.setFromCamera(this.mouse, this.camera);
 
     const hit = this.raycaster.intersectObjects(this.scene.children, true)
-      .find(h => h.object.userData.isPart && !h.object.userData.isPreview);
+      .find(h => h.object.userData.isPart && !h.object.userData.isPreview && 
+                 h.object.visible && (!h.object.parent || h.object.parent.visible !== false));
 
     const isMultiMode = event.ctrlKey || event.metaKey || event.shiftKey;
 
@@ -149,7 +151,10 @@ export class MirrorTool {
       const parts = [];
       this.scene.traverse(child => {
         if (child.type === 'Mesh' && child.userData.isPart && !child.userData.isPreview) {
-          parts.push(child);
+          // 【新增】：过滤掉被隐藏的图层
+          if (child.visible && (!child.parent || child.parent.visible !== false)) {
+            parts.push(child);
+          }
         }
       });
 
@@ -344,10 +349,7 @@ export class MirrorTool {
     }
 
     const N = basePlane.normal;
-
-    // 【核心修改 1】：建立一个全新的 钣金组件 (Group)
-    const newGroup = new THREE.Group();
-    newGroup.userData.isSheetMetalGroup = true;
+    const commands = []; // 准备存储生成命令
 
     this.targets.forEach(target => {
       let T = 0;
@@ -398,8 +400,6 @@ export class MirrorTool {
 
       pos.needsUpdate = true;
       mirroredGeo.computeVertexNormals();
-
-      // 强制重算包围盒/球
       mirroredGeo.computeBoundingBox();
       mirroredGeo.computeBoundingSphere(); 
 
@@ -408,17 +408,17 @@ export class MirrorTool {
       mirroredMesh.rotation.set(0, 0, 0);
       mirroredMesh.scale.set(1, 1, 1);
       mirroredMesh.userData = { ...target.userData }; 
+      mirroredMesh.uuid = THREE.MathUtils.generateUUID(); 
 
-      // 【核心修改 2】：把生成的网格直接放进刚才新建的组里
-      const parent = (target.parent && target.parent.userData.isSheetMetalGroup) ? target.parent : this.scene;
-      commands.push(new AddObjectCommand(mirroredMesh, parent, '特征镜像'));
+      // 【核心】：不再做任何父级判断，全部作为独立图层直接推入 this.scene
+      commands.push(new AddObjectCommand(mirroredMesh, this.scene, '生成独立镜像特征'));
     });
 
-    // 【核心修改 3】：整个新组作为一个命令，推入历史并挂载到场景上
-    if (this.history && newGroup.children.length > 0) {
-      this.history.execute(new AddObjectCommand(newGroup, this.scene, '特征镜像生成新组'));
-    }
-
-    this.clearAll();
+    if (this.history && commands.length > 0) {
+        // 必须确保第二个参数是字符串，第一个参数是刚才定义的数组
+        this.history.execute(new CompoundCommand(commands, '特征镜像操作'));
+      }
+  
+      this.clearAll();
   }
 }

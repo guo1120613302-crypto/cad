@@ -45,9 +45,10 @@ export class BendTool {
     const target = intersects.find(h => 
       h.object.type === 'Mesh' && 
       h.object.geometry.type === 'BoxGeometry' &&
-      h.object.visible === true &&
       h.object.userData.isPart === true && 
-      !h.object.userData.isPreview
+      !h.object.userData.isPreview &&
+      // 【新增】：严格可见性防御
+      h.object.visible && (!h.object.parent || h.object.parent.visible !== false)
     )
 
     if (target) {

@@ -9,9 +9,9 @@ const currentFocus = ref('')
 const isError = ref(false)
 
 // 表单数据绑定
-const account = ref('') 
-const password = ref('')
-const confirmPassword = ref('') 
+const account = ref('admin@test.com') // 填入你的默认测试账号
+const password = ref('123456')        // 填入对应的测试密码
+const confirmPassword = ref('123456')       // 这个保持为空即可
 
 // 状态控制：是否处于注册界面
 const isRegistering = ref(false)

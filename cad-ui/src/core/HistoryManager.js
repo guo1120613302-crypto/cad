@@ -58,15 +58,22 @@ export class DeleteObjectCommand {
 
 // 复合命令（用于镜像等多物体生成）
 export class CompoundCommand {
-  constructor(name, commands) {
-    this.name = name;
-    this.commands = commands;
+    constructor(commands = [], label = '复合操作') {
+      // 【新增保险】：如果传进来的不是数组，强制转为数组，防止 forEach 报错
+      this.commands = Array.isArray(commands) ? commands : [commands];
+      this.label = label;
+    }
+  
+    execute() {
+      // 现在这里绝对不会报 "forEach is not a function" 了
+      this.commands.forEach(cmd => cmd.execute());
+    }
+  
+    undo() {
+      // 撤销时反向遍历
+      [...this.commands].reverse().forEach(cmd => cmd.undo());
+    }
   }
-  execute() { this.commands.forEach(cmd => cmd.execute()); }
-  // 撤销时反向撤销，保证结构安全
-  undo() { [...this.commands].reverse().forEach(cmd => cmd.undo()); }
-}
-
 // 移动命令（用于选择工具的拖拽）
 export class TransformCommand {
   constructor(items) {
@@ -129,5 +136,35 @@ export class AddBendCommand {
        this.parentMesh.geometry.attributes.position.needsUpdate = true;
        this.parentMesh.geometry.computeVertexNormals();
     }
+  }
+}
+// 在 src/core/HistoryManager.js 文件最底部追加：
+
+export class ModifyGeometryCommand {
+  constructor(meshes, oldPosArrays, newPosArrays, name = '边角处理(生长度拼角)') {
+    this.meshes = meshes;
+    this.oldPosArrays = oldPosArrays;
+    this.newPosArrays = newPosArrays;
+    this.name = name;
+  }
+  execute() {
+    this.meshes.forEach((mesh, i) => {
+      if (mesh && mesh.geometry) {
+        mesh.geometry.attributes.position.array.set(this.newPosArrays[i]);
+        mesh.geometry.attributes.position.needsUpdate = true;
+        mesh.geometry.computeVertexNormals();
+        mesh.geometry.computeBoundingBox();
+      }
+    });
+  }
+  undo() {
+    this.meshes.forEach((mesh, i) => {
+      if (mesh && mesh.geometry) {
+        mesh.geometry.attributes.position.array.set(this.oldPosArrays[i]);
+        mesh.geometry.attributes.position.needsUpdate = true;
+        mesh.geometry.computeVertexNormals();
+        mesh.geometry.computeBoundingBox();
+      }
+    });
   }
 }
