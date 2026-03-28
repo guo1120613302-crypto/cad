@@ -26,13 +26,14 @@ export class ToolHub {
     const canvas = stage.renderer.domElement;
 
     this.tools = {
-      select: new SelectTool(scene, camera, canvas, this.entityManager, onSelect, this),
-     
+      // 在末尾追加 uiState.boxSelect
+      select: new SelectTool(scene, camera, canvas, this.entityManager, onSelect, this, uiState.boxSelect),
       rect: new RectTool(scene, camera, canvas, uiState),
       bend: new BendTool(scene, camera, canvas, this.entityManager, onEdgeSelected),
-      mirror: new MirrorTool(scene, camera, canvas, this.entityManager, onMirrorUpdate),
+      // 在末尾追加 uiState.boxSelect
+      mirror: new MirrorTool(scene, camera, canvas, this.entityManager, onMirrorUpdate, this, uiState.boxSelect),
       weld: new WeldTool(scene, camera, canvas, uiState, onWeldUpdate),
-      corner: new CornerTool(scene, camera, canvas, this.entityManager, onWeldUpdate) // 为了省事，可以借用 weldUpdate 通道传数据
+      corner: new CornerTool(scene, camera, canvas, this.entityManager, onWeldUpdate)
     };
 
     Object.values(this.tools).forEach(tool => {

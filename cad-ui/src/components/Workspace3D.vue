@@ -38,7 +38,8 @@ const dynamicUIState = reactive({
   visible: false, x: 0, y: 0,
   width: '0.0', height: '0.0',
   isWidthLocked: false, isHeightLocked: false,
-  thickness: props.thickness
+  thickness: props.thickness,
+  boxSelect: { visible: false, left: 0, top: 0, width: 0, height: 0, color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.2)' }
 })
 
 watch(() => props.thickness, (val) => dynamicUIState.thickness = val)
@@ -117,7 +118,17 @@ onUnmounted(() => {
 <template>
   <div ref="canvasContainer" class="w-full h-full relative cursor-crosshair overflow-hidden">
     <DynamicInput :uiState="dynamicUIState" @confirm="toolHub?.confirm()" @cancel="toolHub?.cancel()" />
-    
+    <div v-show="dynamicUIState.boxSelect.visible" 
+         class="fixed pointer-events-none z-[9999]"
+         :style="{ 
+           left: dynamicUIState.boxSelect.left + 'px', 
+           top: dynamicUIState.boxSelect.top + 'px', 
+           width: dynamicUIState.boxSelect.width + 'px', 
+           height: dynamicUIState.boxSelect.height + 'px',
+           border: `1px solid ${dynamicUIState.boxSelect.color}`,
+           backgroundColor: dynamicUIState.boxSelect.bg
+         }">
+    </div>
     <div class="absolute top-4 left-4 text-[9px] font-mono pointer-events-none select-none z-10 opacity-30">
       <p class="text-[#98c379]">CAD_CORE: ONLINE</p>
       <p class="mt-1 uppercase">MODE: {{ activeTool }}</p>

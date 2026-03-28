@@ -1,13 +1,15 @@
 import * as THREE from 'three'
 import { TransformCommand } from '../HistoryManager.js'
+
 export class SelectTool {
-  constructor(scene, camera, canvas, entityManager, onSelect, toolHub) {
+  constructor(scene, camera, canvas, entityManager, onSelect, toolHub, boxSelectState) {
     this.scene = scene
     this.camera = camera
     this.canvas = canvas
     this.entityManager = entityManager
     this.onSelect = onSelect
     this.toolHub = toolHub; // 新增
+    this.boxSelectState = boxSelectState // 保存 Vue 传来的引用
     
     this.isActive = false
     this.raycaster = new THREE.Raycaster()
@@ -37,15 +39,7 @@ export class SelectTool {
     // --- 纯正的 2D 框选系统 DOM ---
     this.isBoxSelecting = false
     this.boxStart = { x: 0, y: 0 }
-    this.selectionBoxEl = document.createElement('div')
-    this.selectionBoxEl.style.position = 'fixed'
-    this.selectionBoxEl.style.border = '1px solid #3b82f6'
-    this.selectionBoxEl.style.backgroundColor = 'rgba(59, 130, 246, 0.2)'
-    this.selectionBoxEl.style.pointerEvents = 'none'
-    this.selectionBoxEl.style.zIndex = '9999'
-    this.selectionBoxEl.style.display = 'none'
-    document.body.appendChild(this.selectionBoxEl)
-  }
+  } // 【修复：这里补回了 constructor 的闭合括号】
 
   // 对外伪装单选 getter，保证兼容原本外部对 selectedObject 的调用
   get selectedObject() {
@@ -86,7 +80,6 @@ export class SelectTool {
       this.hasMoved = false;
       this.activeAxis = gizmoHits[0].object.userData.axis
       
-      // 开始批量拖拽前，记录所有选中物体的坐标
       this.dragStartPositions.clear()
       this.selectedObjects.forEach(mesh => {
         this.dragStartPositions.set(mesh.uuid, mesh.position.clone())
@@ -94,7 +87,6 @@ export class SelectTool {
       this.gizmoStartPos.copy(this.gizmo.position)
       this.dragPlane.setFromNormalAndCoplanarPoint(this.camera.getWorldDirection(new THREE.Vector3()), this.gizmo.position)
       
-      // 【核心修复 1】：记录鼠标点下的瞬间，在拖拽平面上的“绝对初始坐标”
       this.dragStartPoint = new THREE.Vector3()
       this.raycaster.ray.intersectPlane(this.dragPlane, this.dragStartPoint)
       
@@ -108,7 +100,6 @@ export class SelectTool {
       !h.object.userData.isPreview &&
       h.object.visible && (!h.object.parent || h.object.parent.visible !== false)
     )
-    // 按住 Shift 或 Ctrl 进入多选追加模式
     const isMultiMode = event.shiftKey || event.ctrlKey || event.metaKey
 
     if (target) {
@@ -124,14 +115,17 @@ export class SelectTool {
       // 点在空白处
       if (!isMultiMode) this.deselectAll()
       
-      // 激活框选 UI
+      // 【修复】：在这里触发框选 UI，用 Vue 状态取代了原生 DOM
       this.isBoxSelecting = true
       this.boxStart = { x: event.clientX, y: event.clientY }
-      this.selectionBoxEl.style.left = `${this.boxStart.x}px`
-      this.selectionBoxEl.style.top = `${this.boxStart.y}px`
-      this.selectionBoxEl.style.width = '0px'
-      this.selectionBoxEl.style.height = '0px'
-      this.selectionBoxEl.style.display = 'block'
+      
+      this.boxSelectState.color = '#3b82f6';
+      this.boxSelectState.bg = 'rgba(59, 130, 246, 0.2)';
+      this.boxSelectState.left = this.boxStart.x;
+      this.boxSelectState.top = this.boxStart.y;
+      this.boxSelectState.width = 0;
+      this.boxSelectState.height = 0;
+      this.boxSelectState.visible = true;
     }
   }
 
@@ -146,13 +140,11 @@ export class SelectTool {
       const intersectPoint = new THREE.Vector3()
       this.raycaster.ray.intersectPlane(this.dragPlane, intersectPoint)
       
-      // 【核心修复 2】：使用“当前鼠标点”减去“初始鼠标点”，这样物体只在原地跟随增量移动
       const offset = intersectPoint.clone().sub(this.dragStartPoint)
       
       const axisDir = new THREE.Vector3(this.activeAxis==='x'?1:0, this.activeAxis==='y'?1:0, this.activeAxis==='z'?1:0)
       const delta = axisDir.clone().multiplyScalar(offset.dot(axisDir))
 
-      // 同步移动所有选中的物体
       this.selectedObjects.forEach(mesh => {
         const startP = this.dragStartPositions.get(mesh.uuid)
         if (startP) {
@@ -163,7 +155,6 @@ export class SelectTool {
       this.syncGizmo()
       this.notify()
       
-      // (如果你之前加上了实时干涉检查，保留下面这段，否则可以忽略)
       if (this.toolHub && this.toolHub.autoCheckInterference) {
         this.toolHub.checkInterference();
       }
@@ -171,7 +162,6 @@ export class SelectTool {
     }
 
     if (this.isBoxSelecting) {
-      // 实时绘制 2D 框选矩形
       const currentX = event.clientX
       const currentY = event.clientY
       const left = Math.min(this.boxStart.x, currentX)
@@ -179,17 +169,17 @@ export class SelectTool {
       const width = Math.abs(currentX - this.boxStart.x)
       const height = Math.abs(currentY - this.boxStart.y)
 
-      this.selectionBoxEl.style.left = `${left}px`
-      this.selectionBoxEl.style.top = `${top}px`
-      this.selectionBoxEl.style.width = `${width}px`
-      this.selectionBoxEl.style.height = `${height}px`
+      // 【修复】：用 Vue 状态响应宽度和高度
+      this.boxSelectState.left = left;
+      this.boxSelectState.top = top;
+      this.boxSelectState.width = width;
+      this.boxSelectState.height = height;
     }
   }
 
   onMouseUp(event) {
     if (!this.isActive) return
     
-    // 【核心改造】：鼠标松开的一瞬间，对比新老位置，如果变了，生成一条历史记录
     if (this.isDraggingGizmo) {
       this.isDraggingGizmo = false;
       if (this.hasMoved && this.history) {
@@ -211,12 +201,11 @@ export class SelectTool {
 
     if (this.isBoxSelecting) {
       this.isBoxSelecting = false
-      this.selectionBoxEl.style.display = 'none'
+      this.boxSelectState.visible = false; // 【修复】：鼠标松开，隐藏框选
 
       const currentX = event.clientX
       const currentY = event.clientY
       
-      // 防止普通点击被误判为极小范围的框选
       if (Math.abs(currentX - this.boxStart.x) > 5 || Math.abs(currentY - this.boxStart.y) > 5) {
         const minX = Math.min(this.boxStart.x, currentX)
         const maxX = Math.max(this.boxStart.x, currentX)
@@ -226,7 +215,6 @@ export class SelectTool {
         const parts = []
         this.scene.traverse(child => {
           if (child.type === 'Mesh' && child.userData.isPart && !child.userData.isPreview) {
-            // 【新增】：过滤掉被隐藏的图层
             if (child.visible && (!child.parent || child.parent.visible !== false)) {
               parts.push(child)
             }
@@ -236,7 +224,6 @@ export class SelectTool {
         const isMultiMode = event.shiftKey || event.ctrlKey || event.metaKey
         if (!isMultiMode) this.deselectAll()
 
-        // 核心：投影包围盒，判断物体是否在屏幕 2D 选框内
         parts.forEach(mesh => {
           if (this.isMeshInScreenRect(mesh, minX, maxX, minY, maxY)) {
             if (!this.selectedObjects.includes(mesh)) {
@@ -248,7 +235,6 @@ export class SelectTool {
     }
   }
 
-  // 高精度算法：将 3D 物体的包围盒的 8 个角点映射到 2D 屏幕，判定是否在框内
   isMeshInScreenRect(mesh, minX, maxX, minY, maxY) {
     if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox()
     const box = mesh.geometry.boundingBox
@@ -269,7 +255,7 @@ export class SelectTool {
     for (let pt of pts) {
       pt.applyMatrix4(mesh.matrixWorld)
       pt.project(this.camera)
-      if (pt.z > 1) continue // 跑到镜头背后的过滤掉
+      if (pt.z > 1) continue 
       
       const sx = (pt.x + 1) / 2 * rect.width + rect.left
       const sy = -(pt.y - 1) / 2 * rect.height + rect.top
@@ -280,7 +266,6 @@ export class SelectTool {
       }
     }
 
-    // 防穿透补丁：大板子的角都在屏幕外，但中心在框内
     if (!isInside) {
       const center = new THREE.Vector3()
       box.getCenter(center)
@@ -357,7 +342,6 @@ export class SelectTool {
       }
     })
 
-    // 坐标系吸附在主物体（最后选中的）
     const primary = this.selectedObject
     if (primary) {
       primary.updateMatrixWorld()
@@ -372,7 +356,6 @@ export class SelectTool {
       return
     }
     const p = primary.position, g = primary.geometry.parameters
-    // 使用 Number(val.toFixed(3)) 可以最高保留3位小数，同时自动抹除 100.000 末尾多余的 0
     const format = (val) => val !== undefined ? Number(val.toFixed(3)) : 0
     
     this.onSelect({ 
@@ -397,7 +380,7 @@ export class SelectTool {
     this.deselectAll() 
     if(this.isBoxSelecting) {
         this.isBoxSelecting = false
-        this.selectionBoxEl.style.display = 'none'
+        this.boxSelectState.visible = false; // 【修复】：工具停用时，隐藏框选
     }
   }
 }

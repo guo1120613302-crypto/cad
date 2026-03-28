@@ -1,12 +1,17 @@
 import * as THREE from 'three'
 import { AddObjectCommand, CompoundCommand } from '../HistoryManager.js'
+
 export class MirrorTool {
-  constructor(scene, camera, canvas, entityManager, onUpdate) {
+  // 【修改】：追加 toolHub 和 boxSelectState 参数
+  constructor(scene, camera, canvas, entityManager, onUpdate, toolHub, boxSelectState) {
     this.scene = scene;
     this.camera = camera;
     this.canvas = canvas;
     this.entityManager = entityManager;
     this.onUpdate = onUpdate; 
+    
+    this.toolHub = toolHub;             // 新增
+    this.boxSelectState = boxSelectState; // 新增：保存 Vue 传来的状态引用
 
     this.isActive = false;
     this.raycaster = new THREE.Raycaster();
@@ -22,14 +27,7 @@ export class MirrorTool {
 
     this.isBoxSelecting = false;
     this.boxStart = { x: 0, y: 0 };
-    this.selectionBoxEl = document.createElement('div');
-    this.selectionBoxEl.style.position = 'fixed';
-    this.selectionBoxEl.style.border = '1px solid #a855f7'; 
-    this.selectionBoxEl.style.backgroundColor = 'rgba(168, 85, 247, 0.2)';
-    this.selectionBoxEl.style.pointerEvents = 'none';
-    this.selectionBoxEl.style.zIndex = '9999';
-    this.selectionBoxEl.style.display = 'none';
-    document.body.appendChild(this.selectionBoxEl);
+    // 【修改】：删除了这里原本的 document.createElement('div') 和 style 设置
   }
 
   activate() {
@@ -43,7 +41,7 @@ export class MirrorTool {
     this.clearAll();
     if (this.isBoxSelecting) {
       this.isBoxSelecting = false;
-      this.selectionBoxEl.style.display = 'none';
+      this.boxSelectState.visible = false; // 【修改】：使用 Vue 状态隐藏框选
     }
   }
 
@@ -64,10 +62,11 @@ export class MirrorTool {
       const width = Math.abs(currentX - this.boxStart.x);
       const height = Math.abs(currentY - this.boxStart.y);
 
-      this.selectionBoxEl.style.left = `${left}px`;
-      this.selectionBoxEl.style.top = `${top}px`;
-      this.selectionBoxEl.style.width = `${width}px`;
-      this.selectionBoxEl.style.height = `${height}px`;
+      // 【修改】：使用 Vue 状态更新框选尺寸
+      this.boxSelectState.left = left;
+      this.boxSelectState.top = top;
+      this.boxSelectState.width = width;
+      this.boxSelectState.height = height;
       return;
     }
 
@@ -119,13 +118,18 @@ export class MirrorTool {
     } else {
       if (this.step === 'targets') {
         if (!isMultiMode) this.clearTargets();
+        
+        // 【修改】：激活框选 UI，通过更新 Vue 状态
         this.isBoxSelecting = true;
         this.boxStart = { x: event.clientX, y: event.clientY };
-        this.selectionBoxEl.style.left = `${this.boxStart.x}px`;
-        this.selectionBoxEl.style.top = `${this.boxStart.y}px`;
-        this.selectionBoxEl.style.width = '0px';
-        this.selectionBoxEl.style.height = '0px';
-        this.selectionBoxEl.style.display = 'block';
+        
+        this.boxSelectState.color = '#a855f7'; // 镜像是紫色的框
+        this.boxSelectState.bg = 'rgba(168, 85, 247, 0.2)';
+        this.boxSelectState.left = this.boxStart.x;
+        this.boxSelectState.top = this.boxStart.y;
+        this.boxSelectState.width = 0;
+        this.boxSelectState.height = 0;
+        this.boxSelectState.visible = true;
       } else {
         this.setReference(null);
       }
@@ -136,8 +140,9 @@ export class MirrorTool {
   onMouseUp(event) {
     if (!this.isActive || !this.isBoxSelecting) return;
     
+    // 【修改】：使用 Vue 状态隐藏框选
     this.isBoxSelecting = false;
-    this.selectionBoxEl.style.display = 'none';
+    this.boxSelectState.visible = false;
 
     const currentX = event.clientX;
     const currentY = event.clientY;
@@ -151,7 +156,7 @@ export class MirrorTool {
       const parts = [];
       this.scene.traverse(child => {
         if (child.type === 'Mesh' && child.userData.isPart && !child.userData.isPreview) {
-          // 【新增】：过滤掉被隐藏的图层
+          // 过滤掉被隐藏的图层
           if (child.visible && (!child.parent || child.parent.visible !== false)) {
             parts.push(child);
           }
@@ -331,8 +336,6 @@ export class MirrorTool {
   }
 
   // 安全提取配置，绝不再发生 NaN
-  // src/core/tools/MirrorTool.js
-
   executeMirror(config) {
     if (this.targets.length === 0 || !this.referencePlane) return;
 
@@ -349,7 +352,7 @@ export class MirrorTool {
     }
 
     const N = basePlane.normal;
-    const commands = []; // 准备存储生成命令
+    const commands = []; 
 
     this.targets.forEach(target => {
       let T = 0;
@@ -410,15 +413,13 @@ export class MirrorTool {
       mirroredMesh.userData = { ...target.userData }; 
       mirroredMesh.uuid = THREE.MathUtils.generateUUID(); 
 
-      // 【核心】：不再做任何父级判断，全部作为独立图层直接推入 this.scene
       commands.push(new AddObjectCommand(mirroredMesh, this.scene, '生成独立镜像特征'));
     });
 
     if (this.history && commands.length > 0) {
-        // 必须确保第二个参数是字符串，第一个参数是刚才定义的数组
         this.history.execute(new CompoundCommand(commands, '特征镜像操作'));
-      }
+    }
   
-      this.clearAll();
+    this.clearAll();
   }
 }

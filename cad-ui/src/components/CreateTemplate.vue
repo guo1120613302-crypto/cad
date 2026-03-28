@@ -3,10 +3,12 @@ import { ref, shallowRef, provide, onMounted, onUnmounted, watch } from 'vue'
 import FeatureTree from './FeatureTree.vue'
 import Workspace3D from '../components/Workspace3D.vue'
 import FloatPanel from '../components/FloatPanel.vue'
+import SelectPanel from './panels/SelectPanel.vue'
+import BendPanel from './panels/BendPanel.vue' // 【新增】：引入折弯面板
+
 const toolHubInstance = shallowRef(null)
 provide('toolHub', toolHubInstance)
 const emit = defineEmits(['back', 'add-log'])
-
 
 // === 工具函数：安全解析数学表达式 (重构：支持前置符号相对计算，精度 3 位) ===
 const calcMath = (val, fallback) => {
@@ -132,11 +134,9 @@ const handleObjectSelected = (data) => {
   }
 }
 
-const onPropertyChange = () => {
-  if (selectedData.value) {
-    const target = selectedData.value.isMultiple ? selectedData.value._rawArray : selectedData.value;
-    updateTrigger.value = { target: target, data: { ...selectedData.value } };
-  }
+const handlePropertyChange = (payload) => {
+  selectedData.value = payload.data; // 更新 Vue 的 UI 状态
+  updateTrigger.value = { target: payload.target, data: payload.data }; // 发送给底层 3D 引擎执行
 }
 
 const deleteSelectedEntity = () => {
@@ -160,6 +160,12 @@ const onBendParamChange = () => {
   if (selectedEdge.value) {
     updateTrigger.value = { type: 'bend_preview', ...bendParams.value, edge: selectedEdge.value }
   }
+}
+
+// 【新增】：接收来自 BendPanel 的参数更新并触发底层预览
+const handleBendParamUpdate = (newParams) => {
+  bendParams.value = newParams;
+  onBendParamChange();
 }
 
 const confirmBend = () => {
@@ -340,95 +346,18 @@ const exitWorkspace = () => {
     <FloatPanel title="特性检查器" :initialX="panelX" :initialY="80" :initialWidth="320">
       <div class="space-y-6 pointer-events-auto">
         
-        <div v-if="activeTool === 'select' && selectedData" class="animate-in fade-in slide-in-from-right-2 duration-200">
-          <div v-if="selectedData.isMultiple" class="mb-4 px-3 py-2 bg-cyan-500/10 border border-cyan-500/30 rounded text-[11px] text-cyan-400 leading-relaxed">
-            <div class="flex items-center gap-2 mb-1">
-              <span class="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-ping"></span>
-              <span class="font-bold uppercase">多选对齐模式</span>
-            </div>
-            已选中 {{ selectedData.count }} 个特征。修改坐标将使所有特征在空间内“对齐”到该数值。
-          </div>
-            
-          <div class="flex items-center gap-3 text-[#3b82f6] mb-4 bg-[#3b82f6]/10 p-3 rounded border border-[#3b82f6]/20">
-            <span class="w-3 h-3 bg-[#3b82f6] rounded-full animate-pulse"></span>
-            <span class="text-sm font-bold tracking-wider uppercase">特性详情 (PROPERTIES)</span>
-          </div>
-
-          <div class="space-y-3 bg-[#181a1f] p-4 rounded border border-[#3b4453]">
-            
-            <template v-if="!selectedData.isMultiple">
-              <div class="text-xs text-gray-500 uppercase mb-2">尺寸参数 (Dimensions)</div>
-              <div v-for="p in ['width', 'height', 'thickness']" :key="p" class="flex justify-between items-center text-sm mb-1.5">
-                <span class="text-gray-400">{{ p === 'width' ? '宽度 W' : p === 'height' ? '长度 L' : '厚度 T' }}</span>
-                <div class="flex items-center bg-[#2c313a] rounded border border-transparent focus-within:border-blue-500/50 px-2 transition-all">
-                  <input :value="selectedData[p]" 
-                         @focus="$event.target.select()"
-                         @change="e => { selectedData[p] = calcMath(e.target.value, selectedData[p]); onPropertyChange(); }" 
-                         type="text" 
-                         class="w-24 bg-transparent text-right text-gray-300 py-1.5 outline-none font-bold">
-                  <span class="text-xs text-gray-600 ml-2">mm</span>
-                </div>
-              </div>
-            </template>
-
-            <div class="text-xs text-gray-500 uppercase mb-2 mt-4 pt-4 border-t border-[#3b4453]">空间位置 (World Position)</div>
-            <div v-for="p in ['x', 'y', 'z']" :key="p" class="flex justify-between items-center text-sm mb-1.5">
-              <span class="capitalize font-bold" 
-                    :class="p === 'x' ? 'text-red-500' : p === 'y' ? 'text-green-500' : 'text-blue-500'">
-                {{ p.toUpperCase() }} 轴
-              </span>
-              <div class="flex items-center bg-[#2c313a] rounded border border-transparent focus-within:border-blue-500/50 px-2 transition-all">
-                <input :value="selectedData[p]" 
-                       @focus="$event.target.select()"
-                       @change="e => { selectedData[p] = calcMath(e.target.value, selectedData[p]); onPropertyChange(); }" 
-                       type="text" 
-                       :class="['w-24 bg-transparent text-right py-1.5 outline-none font-bold', 
-                                p === 'x' ? 'text-red-400' : p === 'y' ? 'text-green-400' : 'text-blue-400']">
-                <span class="text-xs text-gray-600 ml-2">mm</span>
-              </div>
-            </div>
-
-          </div>
-          </div>
-
-        <div v-else-if="activeTool === 'bend'">
-           <div v-if="selectedEdge" class="animate-in fade-in duration-200">
-            <div class="flex items-center gap-3 text-yellow-500 mb-5 bg-yellow-500/10 p-3 rounded border border-yellow-500/20">
-              <span class="w-3 h-3 bg-yellow-500 rounded-full animate-pulse"></span>
-              <span class="text-sm font-bold">折弯参数 (BENDING)</span>
-            </div>
-            <div class="space-y-4 bg-[#181a1f] p-4 rounded border border-[#3b4453]">
-              <div class="flex justify-between items-center text-sm">
-                <span class="text-gray-400">拉伸长度 (L)</span>
-                <input :value="bendParams.length" @focus="$event.target.select()" @change="e => { bendParams.length = calcMath(e.target.value, bendParams.length); onBendParamChange(); }" type="text" class="w-24 bg-[#2c313a] text-right text-yellow-400 px-2 py-1 rounded outline-none border border-transparent focus:border-yellow-500 font-bold">
-              </div>
-              <div class="flex justify-between items-center text-sm">
-                <span class="text-gray-400">沿边长度 (W)</span>
-                <input :value="bendParams.width" @focus="$event.target.select()" @change="e => { bendParams.width = calcMath(e.target.value, bendParams.width); onBendParamChange(); }" type="text" class="w-24 bg-[#2c313a] text-right text-yellow-400 px-2 py-1 rounded outline-none border border-transparent focus:border-yellow-500 font-bold">
-              </div>
-              <div class="flex justify-between items-center text-sm">
-                <span class="text-gray-400">折弯角度 (A)</span>
-                <input :value="bendParams.angle" @focus="$event.target.select()" @change="e => { bendParams.angle = calcMath(e.target.value, bendParams.angle); onBendParamChange(); }" type="text" class="w-24 bg-[#2c313a] text-right text-yellow-400 px-2 py-1 rounded outline-none border border-transparent focus:border-yellow-500 font-bold">
-              </div>
-              <div class="flex justify-between items-center text-sm">
-                <span class="text-gray-400">工艺：刨槽 (V-Cut)</span>
-                <input type="checkbox" v-model="bendParams.isGrooved" @change="onBendParamChange" class="w-5 h-5 accent-yellow-500">
-              </div>
-              <button @click="bendParams.direction *= -1; onBendParamChange()" class="w-full py-2 mt-2 text-xs bg-[#2c313a] text-gray-300 rounded border border-gray-600 hover:bg-gray-600 transition-colors">
-                反转折弯方向 (Flip)
-              </button>
-            </div>
-            <button @click="confirmBend" 
-                    :disabled="!selectedEdge"
-                    :class="[!selectedEdge ? 'opacity-30 cursor-not-allowed bg-gray-700' : 'bg-yellow-600 hover:bg-yellow-500 active:scale-95']"
-                    class="w-full mt-6 py-3 text-white text-sm font-bold rounded shadow-lg transition-all">
-              生成折弯实体
-            </button>
-          </div>
-          <div v-else class="h-48 flex items-center justify-center border border-dashed border-yellow-500/20 rounded-lg">
-            <span class="text-sm text-yellow-500/60 uppercase tracking-widest">请在 3D 视图中点击一条边</span>
-          </div>
-        </div>
+        <SelectPanel 
+          v-if="activeTool === 'select'" 
+          :selected-data="selectedData"
+          @property-change="handlePropertyChange" 
+        />
+        <BendPanel 
+          v-else-if="activeTool === 'bend'"
+          :selected-edge="selectedEdge"
+          :bend-params="bendParams"
+          @update-params="handleBendParamUpdate"
+          @confirm="confirmBend"
+        />
 
         <div v-else-if="activeTool === 'weld'" class="animate-in fade-in duration-200">
           <div class="flex items-center gap-3 text-orange-400 mb-5 bg-orange-400/10 p-3 rounded border border-orange-400/20">
